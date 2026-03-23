@@ -1,10 +1,10 @@
 import { Entity, PrimaryColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 import { Order } from '../order/order.entity';
 
-@Entity('customer')
+@Entity()
 export class Customer {
   @PrimaryColumn({ length: 255 })
-  customerId: string;
+  customerId: string; // Manually generated ID like "C007"
 
   @Column({ length: 255 })
   name: string;

@@ -17,6 +17,11 @@ import { Customer } from './customer.entity';
 export class CustomerController {
   constructor(private readonly customerService: CustomerService) {}
   
+  @Get('search')
+  async search(@Query('q') query: string) {
+    return await this.customerService.searchCustomers(query);
+  }
+
   @Get('next-id')
   async getNextId() {
     const nextId = await this.customerService.getNextId();
@@ -45,10 +50,5 @@ export class CustomerController {
   async remove(@Param('id') id: string): Promise<void> {
     console.log('SOFT DELETE /packages/', id);
     await this.customerService.softRemove(id);
-  }
-
-  @Get('search')
-  async search(@Query('q') query: string) {
-    return await this.customerService.searchCustomers(query);
   }
 }
