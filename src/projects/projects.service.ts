@@ -17,6 +17,25 @@ export class ProjectsService {
     });
   }
 
+  // Generate next project ID (PRJ001 → PRJ002)
+  async generateNextProjectId(): Promise<string> {
+    const latest = await this.projectRepo.find({
+      order: { projectId: 'DESC' }, 
+      take: 1,
+      withDeleted: true, 
+    });
+
+    if (!latest.length) return 'PRJ001';
+
+    const lastId = latest[0].projectId; 
+  
+    // \D matches any character that is NOT a digit. 
+    // This makes it prefix-independent!
+    const num = parseInt(lastId.replace(/\D/g, ''), 10) || 0;
+  
+    return `PRJ${String(num + 1).padStart(3, '0')}`;
+  }
+
   async findOne(id: string): Promise<Project> {
     const project = await this.projectRepo.findOne({
       where: { projectId: id },

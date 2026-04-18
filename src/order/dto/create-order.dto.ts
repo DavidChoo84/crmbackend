@@ -6,6 +6,10 @@ import { Channel, OrderType, PaymentType, PaymentStatus, OrderStatus } from '../
 export class CreateOrderProductDto {
   @IsString()
   @IsNotEmpty()
+  productId: string;
+  
+  @IsString()
+  @IsNotEmpty()
   productName: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -117,8 +121,6 @@ export class CreateOrderDto {
   @IsOptional()
   status?: OrderStatus;
 
-
-
   @IsString()
   @IsOptional()
   remark?: string;
@@ -128,5 +130,4 @@ export class CreateOrderDto {
   @ValidateNested({ each: true })
   @Type(() => CreateOrderPackageDto)
   orderPackages: CreateOrderPackageDto[];
-
 }

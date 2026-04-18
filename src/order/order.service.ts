@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Order } from './order.entity';
@@ -6,6 +6,7 @@ import { OrderPackage } from './order-package.entity';
 import { OrderProduct } from './order-product.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Customer } from '../customer/customer.entity';
+import { Product } from '../products/product.entity';
 
 @Injectable()
 export class OrdersService {
@@ -88,6 +89,39 @@ export class OrdersService {
 
       // 5. Save Order within transaction
       const savedOrder = await queryRunner.manager.save(Order, newOrder);
+      
+      // --- STEP 5.5: DEDUCT STOCK FROM PRODUCTS ---
+      // We loop through packages, then through products inside those packages
+      if (orderData.orderPackages) {
+        for (const pkg of orderData.orderPackages) {
+          if (pkg.orderProducts) {
+            for (const orderItem of pkg.orderProducts) {
+              // Find the actual Product in the database
+              const product = await queryRunner.manager.findOne(Product, {
+                where: { productId: orderItem.productId },
+                lock: { mode: 'pessimistic_write' } // Prevents other transactions from changing stock during this read/write
+              });
+
+              if (!product) {
+                throw new NotFoundException(`Product ${orderItem.productId} not found`);
+              }
+
+              // Check if we have enough stock
+              if (product.quantity < orderItem.quantity) {
+                throw new BadRequestException(
+                  `Insufficient stock for product: ${product.productName}. Available: ${product.quantity}, Requested: ${orderItem.quantity}`
+                );
+              }
+
+              // Deduct the stock
+              product.quantity -= Number(orderItem.quantity);
+
+              // Save the updated product within the transaction
+              await queryRunner.manager.save(Product, product);
+            }
+          }
+        }
+      }
 
       // 6. Update Customer's statistics
       const currentTotalSpent = Number(customer.totalSpent) || 0;
@@ -123,9 +157,11 @@ export class OrdersService {
    * with new ones to ensure clean data state.
    */
   async update(id: string, updateOrderDto: CreateOrderDto) {
+    // 1. Fetch OLD order state. 
+    // We MUST have these relations to know what to "refund" to the stock.
     const order = await this.ordersRepository.findOne({ 
       where: { orderId: id },
-      relations: ['orderPackages', 'orderPackages.orderProducts'] 
+      relations: ['orderPackages', 'orderPackages.orderProducts', 'customer'] 
     });
 
     if (!order) throw new NotFoundException(`Order ${id} not found`);
@@ -135,12 +171,28 @@ export class OrdersService {
     await queryRunner.startTransaction();
 
     try {
-      // 1. Clear existing child records
-      if (order.orderPackages && order.orderPackages.length > 0) {
-        await queryRunner.manager.delete(OrderPackage, { order: { orderId: id } });
+      // --- STEP A: THE "REFUND" ---
+      // Return all items from the OLD version of the order back to the database.
+      if (order.orderPackages) {
+        for (const oldPkg of order.orderPackages) {
+          if (oldPkg.orderProducts) {
+            for (const oldItem of oldPkg.orderProducts) {
+              await queryRunner.manager.increment(
+                Product, 
+                { productId: oldItem.productId }, 
+                "quantity", 
+                Number(oldItem.quantity)
+              );
+            }
+          }
+        }
       }
 
-      // 2. Process new packages with fresh IDs
+      // --- STEP B: CLEAR OLD CHILD RECORDS ---
+      // We wipe the packages and products associated with this ID.
+      await queryRunner.manager.delete(OrderPackage, { order: { orderId: id } });
+
+      // --- STEP C: PROCESS NEW DATA (from your CreateOrderDto) ---
       const processedPackages = updateOrderDto.orderPackages?.map((pkg, pIdx) => {
         const pkgId = `OPKG-${id}-${Date.now()}-${pIdx}`;
         return {
@@ -153,7 +205,50 @@ export class OrdersService {
         };
       });
 
-      // 3. Merge and Save
+      // --- STEP D: THE "DEDUCTION" ---
+      // Now we deduct the stock based on the NEW data in the DTO.
+      if (processedPackages) {
+        for (const newPkg of processedPackages) {
+          if (newPkg.orderProducts) {
+            for (const newItem of newPkg.orderProducts) {
+              const product = await queryRunner.manager.findOne(Product, {
+                where: { productId: newItem.productId },
+                lock: { mode: 'pessimistic_write' }
+              });
+
+              if (!product) throw new NotFoundException(`Product ${newItem.productId} not found`);
+
+              // Check if stock is sufficient (after the refund we just did)
+              if (product.quantity < newItem.quantity) {
+                throw new BadRequestException(
+                  `Insufficient stock for ${product.productName}. Available: ${product.quantity}`
+                );
+              }
+
+              product.quantity -= Number(newItem.quantity);
+              await queryRunner.manager.save(Product, product);
+            }
+          }
+        }
+      }
+
+      // --- STEP E: ADJUST CUSTOMER TOTAL ---
+      const oldAmount = Number(order.totalAmount || 0);
+      const newAmount = Number(updateOrderDto.totalAmount || 0);
+    
+      if (oldAmount !== newAmount && order.customer) {
+        const difference = newAmount - oldAmount;
+        order.customer.totalSpent = Number(order.customer.totalSpent) + difference;
+      
+        // Re-evaluate VIP levels
+        if (order.customer.totalSpent > 10000) order.customer.privilege = 'VVIP';
+        else if (order.customer.totalSpent > 5000) order.customer.privilege = 'VIP';
+        else order.customer.privilege = 'Premium';
+
+        await queryRunner.manager.save(Customer, order.customer);
+      }
+
+      // --- STEP F: MERGE & SAVE ---
       const updatedOrder = this.ordersRepository.merge(order, {
         ...updateOrderDto,
         orderPackages: processedPackages,
@@ -165,7 +260,9 @@ export class OrdersService {
       return result;
 
     } catch (err) {
+      // If anything (stock check, db error) fails, the "refund" is undone.
       await queryRunner.rollbackTransaction();
+      console.error("Order Update Failed:", err);
       throw err;
     } finally {
       await queryRunner.release();

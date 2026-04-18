@@ -1,5 +1,5 @@
 // src/projects/projects.controller.ts
-import { Controller, Get, Post, Put, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Header } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { Project } from './project.entity';
 import { ProductsService } from '../products/products.service';
@@ -8,6 +8,14 @@ import { ProductsService } from '../products/products.service';
 export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService,
               private readonly productsService: ProductsService,) {}
+
+  // GET /projects/next-id → returns next projects ID
+  @Get('next-id')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate')
+  async getNextId(): Promise<{ nextId: string }> {
+    const nextId = await this.projectsService.generateNextProjectId();
+    return { nextId };
+  }
 
   // Return minimal data for sidebar (no nested relations)
   @Get()

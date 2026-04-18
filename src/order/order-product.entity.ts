@@ -7,6 +7,9 @@ export class OrderProduct {
   orderProductId: string; // OPRD_001
 
   @Column()
+  productId: string;
+
+  @Column()
   productName: string;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
