@@ -200,6 +200,7 @@ export class OrdersService {
           orderPackageId: pkgId,
           orderProducts: pkg.orderProducts?.map((prod, prIdx) => ({
             ...prod,
+            productId: prod.productId,
             orderProductId: `OPRD-${id}-${pIdx}-${prIdx}-${Date.now()}`
           }))
         };
