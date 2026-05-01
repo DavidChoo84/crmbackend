@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, In } from 'typeorm';
 import { Order } from './order.entity';
 import { OrderPackage } from './order-package.entity';
 import { OrderProduct } from './order-product.entity';
@@ -126,17 +126,23 @@ export class OrdersService {
       // 6. Update Customer's statistics
       const currentTotalSpent = Number(customer.totalSpent) || 0;
       const orderAmount = Number(orderData.totalAmount) || 0;
+      
+      // --- ADDED: Safely get the current total orders ---
+      const currentTotalOrder = Number(customer.totalOrder) || 0; 
     
       // Convert the string date to a proper Date object
       customer.lastOrderDate = new Date(orderData.orderDate); 
       customer.totalSpent = currentTotalSpent + orderAmount;
+      
+      // --- ADDED: Increment total orders by 1 ---
+      customer.totalOrder = currentTotalOrder + 1; 
 
       // Recalculate Privilege
       if (customer.totalSpent > 10000) customer.privilege = 'VVIP';
       else if (customer.totalSpent > 5000) customer.privilege = 'VIP';
       else customer.privilege = 'Premium';
 
-      // 6. Save Customer within transaction
+      // 7. Save Customer within transaction
       await queryRunner.manager.save(Customer, customer);
 
       await queryRunner.commitTransaction();
@@ -157,61 +163,68 @@ export class OrdersService {
    * with new ones to ensure clean data state.
    */
   async update(id: string, updateOrderDto: CreateOrderDto) {
-    // 1. Fetch OLD order state. 
-    // We MUST have these relations to know what to "refund" to the stock.
-    const order = await this.ordersRepository.findOne({ 
-      where: { orderId: id },
-      relations: ['orderPackages', 'orderPackages.orderProducts', 'customer'] 
-    });
+      const order = await this.ordersRepository.findOne({ 
+        where: { orderId: id },
+        relations: ['orderPackages', 'orderPackages.orderProducts'] 
+      });
 
-    if (!order) throw new NotFoundException(`Order ${id} not found`);
+      if (!order) throw new NotFoundException(`Order ${id} not found`);
 
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
 
-    try {
-      // --- STEP A: THE "REFUND" ---
-      // Return all items from the OLD version of the order back to the database.
-      if (order.orderPackages) {
-        for (const oldPkg of order.orderPackages) {
-          if (oldPkg.orderProducts) {
-            for (const oldItem of oldPkg.orderProducts) {
+      try {
+        // --- STEP A: RESTORE STOCK ---
+        if (order.orderPackages) {
+          for (const oldPkg of order.orderPackages) {
+            const pkgMultiplier = Number(oldPkg.quantity || 1); 
+            for (const oldItem of oldPkg.orderProducts || []) {
               await queryRunner.manager.increment(
                 Product, 
                 { productId: oldItem.productId }, 
                 "quantity", 
-                Number(oldItem.quantity)
+                Number(oldItem.quantity) * pkgMultiplier
               );
             }
           }
         }
-      }
 
-      // --- STEP B: CLEAR OLD CHILD RECORDS ---
-      // We wipe the packages and products associated with this ID.
-      await queryRunner.manager.delete(OrderPackage, { order: { orderId: id } });
+        // --- STEP B: DELETE FROM DB AND CLEAR MEMORY ---
+        const oldPackageIds = order.orderPackages?.map(p => p.orderPackageId) || [];
+        if (oldPackageIds.length > 0) {
+          // Delete from database
+          await queryRunner.manager.delete(OrderProduct, { orderPackage: { orderPackageId: In(oldPackageIds) } });
+          await queryRunner.manager.delete(OrderPackage, { order: { orderId: id } });
+        }
+        
+        /** 
+         * CRITICAL FIX: Empty the array on the JS object.
+         * If we don't do this, the 'merge' later will keep the old 
+         * references and save them again as duplicates.
+         */
+        order.orderPackages = []; 
 
-      // --- STEP C: PROCESS NEW DATA (from your CreateOrderDto) ---
-      const processedPackages = updateOrderDto.orderPackages?.map((pkg, pIdx) => {
-        const pkgId = `OPKG-${id}-${Date.now()}-${pIdx}`;
-        return {
-          ...pkg,
-          orderPackageId: pkgId,
-          orderProducts: pkg.orderProducts?.map((prod, prIdx) => ({
-            ...prod,
-            productId: prod.productId,
-            orderProductId: `OPRD-${id}-${pIdx}-${prIdx}-${Date.now()}`
-          }))
-        };
-      });
+        // --- STEP C: PROCESS NEW DATA ---
+        const processedPackages = updateOrderDto.orderPackages?.map((pkg, pIdx) => {
+          const timestamp = Date.now();
+          const pkgId = `OPKG-${id}-${timestamp}-${pIdx}`;
+          return {
+            ...pkg,
+            orderPackageId: pkgId,
+            order: { orderId: id }, 
+            orderProducts: pkg.orderProducts?.map((prod, prIdx) => ({
+              ...prod,
+              orderProductId: `OPRD-${id}-${pIdx}-${prIdx}-${timestamp}`
+            }))
+          };
+        });
 
-      // --- STEP D: THE "DEDUCTION" ---
-      // Now we deduct the stock based on the NEW data in the DTO.
-      if (processedPackages) {
-        for (const newPkg of processedPackages) {
-          if (newPkg.orderProducts) {
-            for (const newItem of newPkg.orderProducts) {
+        // --- STEP D: DEDUCT NEW STOCK ---
+        if (processedPackages) {
+          for (const newPkg of processedPackages) {
+            const pkgMultiplier = Number(newPkg.quantity || 1);
+            for (const newItem of newPkg.orderProducts || []) {
               const product = await queryRunner.manager.findOne(Product, {
                 where: { productId: newItem.productId },
                 lock: { mode: 'pessimistic_write' }
@@ -219,55 +232,38 @@ export class OrdersService {
 
               if (!product) throw new NotFoundException(`Product ${newItem.productId} not found`);
 
-              // Check if stock is sufficient (after the refund we just did)
-              if (product.quantity < newItem.quantity) {
-                throw new BadRequestException(
-                  `Insufficient stock for ${product.productName}. Available: ${product.quantity}`
-                );
+              const totalToDeduct = Number(newItem.quantity) * pkgMultiplier;
+              if (product.quantity < totalToDeduct) {
+                throw new BadRequestException(`Insufficient stock for ${product.productName}`);
               }
 
-              product.quantity -= Number(newItem.quantity);
+              product.quantity -= totalToDeduct;
               await queryRunner.manager.save(Product, product);
             }
           }
         }
+
+        // --- STEP E: MERGE & SAVE ---
+        // We merge into the now-empty order object
+        const updatedOrder = this.ordersRepository.merge(order, {
+          ...updateOrderDto,
+          orderPackages: processedPackages,
+        });
+
+        // Avoid re-saving the customer relation if it's already there
+        delete (updatedOrder as any).customer; 
+
+        await queryRunner.manager.save(Order, updatedOrder);
+        await queryRunner.commitTransaction();
+        
+        return this.findOne(id); 
+
+      } catch (err) {
+        await queryRunner.rollbackTransaction();
+        throw err;
+      } finally {
+        await queryRunner.release();
       }
-
-      // --- STEP E: ADJUST CUSTOMER TOTAL ---
-      const oldAmount = Number(order.totalAmount || 0);
-      const newAmount = Number(updateOrderDto.totalAmount || 0);
-    
-      if (oldAmount !== newAmount && order.customer) {
-        const difference = newAmount - oldAmount;
-        order.customer.totalSpent = Number(order.customer.totalSpent) + difference;
-      
-        // Re-evaluate VIP levels
-        if (order.customer.totalSpent > 10000) order.customer.privilege = 'VVIP';
-        else if (order.customer.totalSpent > 5000) order.customer.privilege = 'VIP';
-        else order.customer.privilege = 'Premium';
-
-        await queryRunner.manager.save(Customer, order.customer);
-      }
-
-      // --- STEP F: MERGE & SAVE ---
-      const updatedOrder = this.ordersRepository.merge(order, {
-        ...updateOrderDto,
-        orderPackages: processedPackages,
-      });
-
-      const result = await queryRunner.manager.save(Order, updatedOrder);
-
-      await queryRunner.commitTransaction();
-      return result;
-
-    } catch (err) {
-      // If anything (stock check, db error) fails, the "refund" is undone.
-      await queryRunner.rollbackTransaction();
-      console.error("Order Update Failed:", err);
-      throw err;
-    } finally {
-      await queryRunner.release();
-    }
   }
 
   async updateStatus(id: string, status: string) {
@@ -296,11 +292,72 @@ export class OrdersService {
   }
 
   async remove(id: string) {
-    const order = await this.ordersRepository.findOne({ where: { orderId: id } });
+    // 🚨 ADDED 'customer' to relations so we can update their stats
+    const order = await this.ordersRepository.findOne({ 
+      where: { orderId: id },
+      relations: ['orderPackages', 'orderPackages.orderProducts', 'customer'] 
+    });
+
     if (!order) throw new NotFoundException(`Order with ID ${id} not found`);
 
-    await this.ordersRepository.delete({ orderId: id });
-    return { message: `Order ${id} deleted successfully.` };
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // 1. REFUND STOCK
+      if (order.orderPackages) {
+        for (const pkg of order.orderPackages) {
+          const pkgMultiplier = Number(pkg.quantity || 1);
+          
+          for (const item of pkg.orderProducts || []) {
+            await queryRunner.manager.increment(
+              Product, 
+              { productId: item.productId }, 
+              "quantity", 
+              Number(item.quantity) * pkgMultiplier
+            );
+          }
+        }
+      }
+
+      // 2. EXPLICIT DELETE (Prevents Foreign Key Errors)
+      const packageIds = order.orderPackages?.map(p => p.orderPackageId) || [];
+      if (packageIds.length > 0) {
+        await queryRunner.manager.delete(OrderProduct, { orderPackage: { orderPackageId: In(packageIds) } });
+        await queryRunner.manager.delete(OrderPackage, { order: { orderId: id } });
+      }
+
+      // --- STEP 3: REVERSE CUSTOMER STATISTICS ---
+      if (order.customer) {
+        const customer = order.customer;
+        const orderAmount = Number(order.totalAmount) || 0;
+
+        // Use Math.max to prevent the numbers from ever going below 0
+        customer.totalOrder = Math.max(0, (Number(customer.totalOrder) || 0) - 1);
+        customer.totalSpent = Math.max(0, (Number(customer.totalSpent) || 0) - orderAmount);
+
+        // Recalculate Privilege based on the new reduced amount
+        if (customer.totalSpent > 10000) customer.privilege = 'VVIP';
+        else if (customer.totalSpent > 5000) customer.privilege = 'VIP';
+        else customer.privilege = 'Premium';
+
+        // Save the updated customer
+        await queryRunner.manager.save(Customer, customer);
+      }
+
+      // 4. DELETE MAIN ORDER
+      await queryRunner.manager.delete(Order, { orderId: id });
+
+      await queryRunner.commitTransaction();
+      return { message: `Order ${id} deleted, inventory restored, and customer stats updated.` };
+
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async getNextOrderId(): Promise<string> {
