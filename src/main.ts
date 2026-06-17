@@ -1,35 +1,33 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { UsersService } from './users/users.service';
+import { ValidationPipe } from '@nestjs/common';
 import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // ✅ Increase body payload limits for Base64 image strings
+  // ✅ Global validation pipe for DTO verification
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    transform: true,
+  }));
+
+  // ✅ Payload size limits for Base64 assets
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
 
-  // ✅ Enable CORS for your frontend (React app on port 3001)
+  // ✅ Application CORS handling
   app.enableCors({
     origin: [
-      'http://localhost:3001', // your React app
-      'http://localhost:5173', // optional (Vite)
-      'http://localhost:8080', // optional
+      'http://localhost:3001', 
+      'http://localhost:5173', 
+      'http://localhost:8080', 
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
-  
-  // ✅ Seed admin user if not exists
-  const usersService = app.get(UsersService);
-  const admin = await usersService.findByUsername('admin');
-  if (!admin) {
-    console.log('Seeding admin user -> username: admin, password: admin123');
-    await usersService.create('admin', 'admin123', undefined, true);
-  }
 
-  // ✅ Start server
+  // ✅ Start backend service
   await app.listen(3000);
   console.log('🚀 App running on http://localhost:3000');
 }

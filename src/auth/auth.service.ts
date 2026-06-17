@@ -2,8 +2,8 @@ import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/co
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { User } from '../users/user.entity.js'; // Adjust path to your User Entity
-import * as bcrypt from 'bcrypt';
+import { User } from '../users/user.entity'; // 🔑 Fixed: Removed the .js extension
+import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -14,11 +14,23 @@ export class AuthService {
   ) {}
 
   // Used by LocalStrategy to check credentials
+  // Inside src/auth/auth.service.ts
+
   async validateUser(userId: string, pass: string): Promise<any> {
+    console.log('--- LOGIN ATTEMPT ---');
     const user = await this.userRepo.findOne({ where: { userId } });
+
+    // 🛠️ TEMPORARY AUTO-HEALER: If it detects the bad hash, overwrite it natively
+    if (user && user.password === '$2b$10$g.Vb49ZdfS3atUsh4O19puxN66w.pIdC7noHe63S68fKExOOnYIdO') {
+      console.log('🔄 Bad hash detected! Generating a real native hash for "123456"...');
+      user.password = await bcrypt.hash('123456', 10);
+      await this.userRepo.save(user);
+      console.log('✅ Database successfully updated with valid native hash!');
+    }
+
     if (user && (await bcrypt.compare(pass, user.password))) {
       const { password, ...result } = user;
-      return result; // Returns user details minus the password
+      return result; 
     }
     return null;
   }
