@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Body, Param, Patch, Put, Delete } from '@nestjs/common';
+import { 
+  Controller, 
+  Get, 
+  Post, 
+  Body, 
+  Param, 
+  Patch, 
+  Put, 
+  Delete, 
+  UseInterceptors, 
+  UploadedFile 
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
 import { OrdersService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
@@ -45,5 +58,16 @@ export class OrdersController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.ordersService.remove(id);
+  }
+
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file', {
+    storage: diskStorage({
+      destination: './uploads',
+      filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+    }),
+  }))
+  uploadReceipt(@UploadedFile() file: Express.Multer.File) {
+    return { filePath: `uploads/${file.filename}` };
   }
 }

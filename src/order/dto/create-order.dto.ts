@@ -99,7 +99,7 @@ export class CreateOrderDto {
 
   @IsString()
   @IsOptional()
-  salesPerson?: string;
+  salesPerson?: string; 
 
   @IsString()
   @IsOptional()
@@ -125,7 +125,6 @@ export class CreateOrderDto {
   @IsOptional()
   remark?: string;
 
-  // --- Nested Data ---
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateOrderPackageDto)

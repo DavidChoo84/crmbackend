@@ -1,4 +1,4 @@
-import { Entity, PrimaryColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, Index, ManyToOne } from 'typeorm';
+import { Entity, PrimaryColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm';
 import { OrderPackage } from './order-package.entity';
 import { OrderProduct } from './order-product.entity';
 import { Customer } from '../customer/customer.entity';
@@ -6,7 +6,7 @@ import { Customer } from '../customer/customer.entity';
 // Define Enums to match your DB constraints
 export enum Channel {
   WHATSAPP = 'Whatsapp',
-  FACEBOOK = 'Facebook', // Assuming this based on common use cases
+  FACEBOOK = 'Facebook',
   WEBSITE = 'Website',
   OTHER = 'Other'
 }
@@ -46,31 +46,7 @@ export class Order {
   orderDate: Date;
 
   @Column({ type: 'varchar', length: 255 })
-  customerName: string;
-
-  @Column({ type: 'varchar', length: 30, nullable: true })
-  contactNumber: string;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  fbName: string;
-
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  email: string;
-
-  @Column({ type: 'date', nullable: true })
-  dateOfBirth: Date | null;
-
-  @Column({ type: 'text', nullable: true })
-  address: string;
-
-  @Column({ type: 'varchar', length: 10, nullable: true })
-  postCode: string;
-
-  @Column({ type: 'varchar', length: 50, nullable: true })
-  state: string;
-
-  @Column({ type: 'enum', enum: Channel })
-  channel: Channel;
+  customerId: string;
 
   @Column({ type: 'enum', enum: OrderType })
   orderType: OrderType;
@@ -104,11 +80,22 @@ export class Order {
   @Column({ type: 'text', nullable: true })
   remark: string;
 
+  @Column({
+    type: 'enum',
+    enum: Channel,
+    default: Channel.FACEBOOK
+  })
+  channel: Channel;
+
+  @Column({ type: 'longtext', nullable: true })
+  receiptImage: string;
+
   // --- Relationships ---
   @OneToMany(() => OrderPackage, (orderPackage) => orderPackage.order, { cascade: true })
   orderPackages: OrderPackage[];
 
   @ManyToOne(() => Customer, (customer) => customer.orders, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'customerId' }) 
   customer: Customer;
 
   // --- Timestamps --- 

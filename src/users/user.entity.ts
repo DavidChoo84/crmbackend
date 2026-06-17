@@ -1,21 +1,42 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, Column, PrimaryColumn, CreateDateColumn } from 'typeorm';
 
 export enum UserRole {
-  ADMIN = 'admin',
-  USER = 'user',
+  MASTER = 'master',
+  LOGISTIC = 'logistic',
+  CS_PC = 'cs_pc'
 }
 
-@Entity()
+@Entity('users')
 export class User {
-  @PrimaryGeneratedColumn()
-  id: number;
-
-  @Column({ unique: true })
-  username: string;
+  @PrimaryColumn({ length: 50 })
+  userId: string;
 
   @Column()
-  password: string;
+  name: string;
 
-  @Column({ type: 'enum', enum: UserRole, default: UserRole.USER })
+  @Column()
+  password: string; // Will be safely encrypted with bcrypt
+
+  @Column({
+    type: 'enum',
+    enum: UserRole,
+    default: UserRole.LOGISTIC
+  })
   role: UserRole;
+
+  @Column({ name: 'phone_number', nullable: true })
+  phoneNumber: string;
+
+  @Column({ unique: true })
+  email: string;
+
+  // Trackers for forgot-password lifecycle
+  @Column({ name: 'reset_password_token', nullable: true })
+  resetPasswordToken: string;
+
+  @Column({ name: 'reset_password_expires', type: 'datetime', nullable: true })
+  resetPasswordExpires: Date;
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date;
 }

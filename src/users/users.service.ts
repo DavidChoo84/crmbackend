@@ -1,40 +1,46 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, UserRole } from './user.entity';
-import * as bcrypt from 'bcryptjs';
+import { User } from './user.entity';
+import { CreateUserDto } from './dto/create-user.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectRepository(User) private usersRepo: Repository<User>) {}
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+  ) {}
 
-  async create(
-    username: string,
-    password: string,
-    role: UserRole = UserRole.USER,
-    forceCreate = false,
-  ) {
-    const existing = await this.usersRepo.findOne({ where: { username } });
-    if (existing && !forceCreate) return existing;
+  async create(createUserDto: CreateUserDto): Promise<User> {
+    const { userId, email, password } = createUserDto;
 
-    const hashed = await bcrypt.hash(password, 10);
-    const user = this.usersRepo.create({
-      username,
-      password: hashed,
-      role,
+    // Guard against duplicated credentials
+    const existingUser = await this.userRepo.findOne({
+      where: [{ userId }, { email }],
     });
-    return this.usersRepo.save(user);
+
+    if (existingUser) {
+      throw new ConflictException('User ID or Email already exists');
+    }
+
+    // Secure password hashing
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newUser = this.userRepo.create({
+      ...createUserDto,
+      password: hashedPassword,
+    });
+
+    return await this.userRepo.save(newUser);
   }
 
-  findByUsername(username: string) {
-    return this.usersRepo.findOne({ where: { username } });
+  async findOneById(userId: string): Promise<User | null> {
+    return this.userRepo.findOne({ where: { userId } });
   }
 
-  findAll() {
-    return this.usersRepo.find();
-  }
-
-  findById(id: number) {
-    return this.usersRepo.findOne({ where: { id } });
+  async findOneByEmail(email: string): Promise<User | null> {
+    return this.userRepo.findOne({ where: { email } });
   }
 }

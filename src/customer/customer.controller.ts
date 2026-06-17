@@ -28,6 +28,11 @@ export class CustomerController {
     return { nextId }; // Returning an object is best practice for JSON APIs
   }
   
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.customerService.findOne(id);
+  }
+  
   // Create a new customer
   @Post()
     create(@Body() data: Partial<Customer>): Promise<Customer> {

@@ -10,17 +10,17 @@ export class CustomerService {
     private customerRepo: Repository<Customer>,
   ) {}
 
-  // 1. Generate Custom ID (C001, C002...)
+  // 1. FIXED: Custom ID generation handles sorting beyond C999
   async getNextId(): Promise<string> {
-    const lastCustomer = await this.customerRepo.find({
-      order: { customerId: 'DESC' },
-      take: 1,
-    });
+    const lastCustomer = await this.customerRepo
+      .createQueryBuilder('customer')
+      .orderBy('CAST(SUBSTRING(customer.customerId, 2) AS UNSIGNED)', 'DESC')
+      .getOne();
 
-    if (lastCustomer.length === 0) return 'C001';
+    if (!lastCustomer) return 'C001';
 
-    const lastId = lastCustomer[0].customerId;
-    const numberPart = parseInt(lastId.substring(1));
+    const lastId = lastCustomer.customerId;
+    const numberPart = parseInt(lastId.substring(1), 10);
     const nextNumber = numberPart + 1;
     
     return `C${nextNumber.toString().padStart(3, '0')}`;
@@ -30,28 +30,29 @@ export class CustomerService {
   async create(data: Partial<Customer>): Promise<Customer> {
     const newId = await this.getNextId();
     
-    // Auto-calculate privilege based on initial spent if provided
-    const privilege = this.calculatePrivilege(data.totalSpent || 0);
+    // Ensure totalSpent is processed cleanly as a number
+    const initialSpent = Number(data.totalSpent || 0);
+    const privilege = this.calculatePrivilege(initialSpent);
 
     const newCustomer = this.customerRepo.create({
       ...data,
       customerId: newId,
       privilege,
       totalOrder: data.totalOrder || 0,
-      totalSpent: data.totalSpent || 0,
+      totalSpent: initialSpent,
     });
     return this.customerRepo.save(newCustomer);
   }
 
-  // 3. Automatic Stats Update (Call this from OrderService after saving an order)
+  // 3. Automatic Stats Update
   async updateStatsAfterOrder(customerId: string, orderAmount: number): Promise<void> {
     const customer = await this.customerRepo.findOneBy({ customerId });
     if (!customer) return;
 
-    // Update totals
-    customer.totalOrder += 1;
+    // Coerce values to numbers to prevent accidental string concatenation
+    customer.totalOrder = Number(customer.totalOrder) + 1;
     customer.totalSpent = Number(customer.totalSpent) + Number(orderAmount);
-    customer.lastOrderDate = new Date(); // Update to current timestamp
+    customer.lastOrderDate = new Date(); 
 
     // Recalculate privilege tier
     customer.privilege = this.calculatePrivilege(customer.totalSpent);
@@ -63,12 +64,12 @@ export class CustomerService {
   private calculatePrivilege(spent: number): string {
     if (spent > 10000) return 'VVIP';
     if (spent > 5000) return 'VIP';
-    return 'Premium'; // Default as per your UI
+    return 'Premium'; 
   }
 
   findAll() {
     return this.customerRepo.find({
-      order: { name: 'ASC'},
+      order: { name: 'ASC' },
       take: 50
     });
   }
@@ -77,13 +78,14 @@ export class CustomerService {
     const customer = await this.customerRepo.findOneBy({ customerId: id });
     if (!customer) throw new NotFoundException(`Customer ${id} not found`);
 
-    // Prevent manual overwriting of lastOrderDate during standard updates
+    // Prevent manual overwriting of lastOrderDate or primary key
     delete data.lastOrderDate;
+    delete data.customerId;
 
     Object.assign(customer, data);
 
     if (data.totalSpent !== undefined) {
-        customer.privilege = this.calculatePrivilege(customer.totalSpent);
+      customer.privilege = this.calculatePrivilege(Number(customer.totalSpent));
     }
 
     return await this.customerRepo.save(customer);
@@ -96,7 +98,7 @@ export class CustomerService {
     }
   }
 
-  // Updated to include fields needed for Order Modal auto-fill
+  // FIXED: Updated select syntax to valid TypeORM 0.3 object format
   async searchCustomers(query: string) {
     if (!query || query.length < 2) return [];
 
@@ -107,10 +109,23 @@ export class CustomerService {
         { mobilePhone: Like(`%${query}%`) }
       ],
       take: 10,
-      select: [
-        'customerId', 'name', 'email', 'mobilePhone', 
-        'fbName', 'address', 'postCode', 'city', 'state'
-      ] 
+      select: {
+        customerId: true,
+        name: true,
+        email: true,
+        mobilePhone: true,
+        fbName: true,
+        address: true,
+        postCode: true,
+        city: true,
+        state: true
+      }
     });
+  }
+
+  async findOne(id: string): Promise<Customer> {
+    const customer = await this.customerRepo.findOneBy({ customerId: id });
+    if (!customer) throw new NotFoundException(`Customer with ID ${id} not found`);
+    return customer;
   }
 }
