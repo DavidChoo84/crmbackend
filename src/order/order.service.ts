@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
-import { Order } from './order.entity';
+import { Order, OrderType } from './order.entity';
 import { OrderPackage } from './order-package.entity';
 import { OrderProduct } from './order-product.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -66,11 +66,18 @@ export class OrdersService {
           };
         });
       }
+
+      // 🔑 AUTOFILL LOGIC: Check order history inside the transaction context
+      const previousOrdersCount = await queryRunner.manager.count(Order, {
+        where: { customer: { customerId: customer.customerId } }
+      });
+      const determinedOrderType = previousOrdersCount > 0 ? OrderType.REPEAT : OrderType.NEW;
       
       const newOrder = queryRunner.manager.create(Order, {
         ...orderData,
         orderId: newOrderId, 
         customer: customer,
+        orderType: determinedOrderType, // ✅ Populates your 'orderType' column automatically
         shippingFee: Number(orderData.shippingFee || 0),
         totalAmount: Number(orderData.totalAmount || 0),
       });

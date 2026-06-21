@@ -8,7 +8,7 @@ import { AuthService } from './auth.service';
 export class LocalStrategy extends PassportStrategy(Strategy) {
   constructor(private authService: AuthService) {
     super({
-      usernameField: 'userId', // 🔑 CRUCIAL: Tells Passport to map 'userId' from the body
+      usernameField: 'userId',
       passwordField: 'password',
     });
   }

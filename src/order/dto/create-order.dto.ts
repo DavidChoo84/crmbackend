@@ -85,6 +85,7 @@ export class CreateOrderDto {
   @IsNotEmpty()
   channel: Channel;
 
+  @IsOptional()
   @IsEnum(OrderType)
   @IsNotEmpty()
   orderType: OrderType;
@@ -100,6 +101,10 @@ export class CreateOrderDto {
   @IsString()
   @IsOptional()
   salesPerson?: string; 
+
+  @IsOptional()
+  @IsString()
+  receiptImage?: string;
 
   @IsString()
   @IsOptional()

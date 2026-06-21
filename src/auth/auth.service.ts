@@ -17,20 +17,18 @@ export class AuthService {
   // Inside src/auth/auth.service.ts
 
   async validateUser(userId: string, pass: string): Promise<any> {
-    console.log('--- LOGIN ATTEMPT ---');
+
     const user = await this.userRepo.findOne({ where: { userId } });
-
-    // 🛠️ TEMPORARY AUTO-HEALER: If it detects the bad hash, overwrite it natively
-    if (user && user.password === '$2b$10$g.Vb49ZdfS3atUsh4O19puxN66w.pIdC7noHe63S68fKExOOnYIdO') {
-      console.log('🔄 Bad hash detected! Generating a real native hash for "123456"...');
-      user.password = await bcrypt.hash('123456', 10);
-      await this.userRepo.save(user);
-      console.log('✅ Database successfully updated with valid native hash!');
+    
+    if (!user) {
+      console.log(`❌ No user found with userId "${userId}"`);
+      return null;
     }
+    const isMatch = await bcrypt.compare(pass, user.password);
 
-    if (user && (await bcrypt.compare(pass, user.password))) {
+    if (isMatch) {
       const { password, ...result } = user;
-      return result; 
+      return result;
     }
     return null;
   }

@@ -15,8 +15,8 @@ export class User {
   name: string;
 
   @Column()
-  password: string; // Will be safely encrypted with bcrypt
-
+  password: string; 
+  
   @Column({
     type: 'enum',
     enum: UserRole,
