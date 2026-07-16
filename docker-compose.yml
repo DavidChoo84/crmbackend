@@ -27,6 +27,8 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+      mailhog:
+        condition: service_started
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
@@ -35,9 +37,24 @@ services:
       DB_NAME: nestjs_db
       JWT_SECRET: supersecret_jwt_key
       JWT_EXPIRATION: 3600s
+      MAIL_HOST: mailhog
+      MAIL_PORT: 1025
+      MAIL_SECURE: "false"
+      MAIL_USER: ""
+      MAIL_PASSWORD: ""
+      MAIL_FROM: "CRM App <no-reply@yourcrm.com>"
+      FRONTEND_URL: "http://localhost:3001"
     ports:
       - "3000:3000"
     command: npm run start:dev
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    restart: always
+    ports:
+      - "8025:8025"   # web UI — view caught emails at http://localhost:8025
+      - "1025:1025"   # SMTP port
 
 volumes:
   mysql_data:

@@ -8,14 +8,16 @@ import { User } from '../users/user.entity';
 import { LocalStrategy } from './local.strategy';
 import { JwtStrategy } from './jwt.strategy';
 import { UsersModule } from '../users/users.module';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
+    MailModule,
     JwtModule.register({
-      secret: 'YOUR_JWT_SECRET_KEY', // Use process.env here as well
-      signOptions: { expiresIn: '1d' }, // 1 day session lifecycle
+      secret: process.env.JWT_SECRET || 'YOUR_SECRET_KEY',
+      signOptions: { expiresIn: '1d' }, 
     }),
   ],
   providers: [AuthService, LocalStrategy, JwtStrategy],

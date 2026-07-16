@@ -1,6 +1,8 @@
-import { Entity, PrimaryColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn, DeleteDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, JoinTable, ManyToMany } from 'typeorm';
 import { Product } from '../products/product.entity';
 import { Package } from '../packages/package.entity';
+import { User } from '../users/user.entity';
+import { Order } from '../order/order.entity'; 
 
 @Entity('project')
 export class Project {
@@ -10,19 +12,20 @@ export class Project {
   @Column({ type: 'varchar', length: 255 })
   projectName: string;
 
-  // One Project -> Many Products
-  @OneToMany(() => Product, (product) => product.project, {
-    cascade: true,
+  @ManyToMany(() => User, (user) => user.projects)
+  @JoinTable({
+    name: 'project_members',
+    joinColumn: { name: 'projectId', referencedColumnName: 'projectId' },
+    inverseJoinColumn: { name: 'userId', referencedColumnName: 'userId' },
   })
+  members: User[];
+
+  @OneToMany(() => Product, (product) => product.project, { cascade: true })
   products: Product[];
 
-  // One Project -> Many Packages
-  @OneToMany(() => Package, (pkg) => pkg.project, {
-    cascade: true,
-  })
+  @OneToMany(() => Package, (pkg) => pkg.project, { cascade: true })
   packages: Package[];
 
-  // --- Add these for consistency with other tables ---
   @CreateDateColumn()
   createdAt: Date;
 

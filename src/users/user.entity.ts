@@ -1,4 +1,5 @@
-import { Entity, Column, PrimaryColumn, CreateDateColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn, CreateDateColumn, ManyToMany, JoinTable } from 'typeorm';
+import { Project } from '../projects/project.entity';
 
 export enum UserRole {
   MASTER = 'master',
@@ -39,4 +40,7 @@ export class User {
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  @ManyToMany(() => Project, (project) => project.members)
+  projects: Project[];
 }

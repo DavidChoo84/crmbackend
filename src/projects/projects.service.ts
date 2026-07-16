@@ -10,9 +10,23 @@ export class ProjectsService {
     private readonly projectRepo: Repository<Project>,
   ) {}
 
-  async findAll(): Promise<Project[]> {
+  async findAll(user: { userId: string; role: string }): Promise<Project[]> {
+    // 👑 1. Master Admin bypasses restrictions and sees ALL projects
+    if (user.role === 'master') {
+      return this.projectRepo.find({
+        relations: ['products', 'packages'],
+        order: { projectName: 'ASC' },
+      });
+    }
+
+    // 🔒 2. Regular staff members only see projects assigned to them in 'project_members'
     return this.projectRepo.find({
-      relations: ['products', 'packages'],
+      where: {
+        members: {
+          userId: user.userId, // TypeORM handles the junction table join implicitly
+        },
+      },
+      relations: ['products', 'packages'], // Keeps your existing product/package relations intact!
       order: { projectName: 'ASC' },
     });
   }
