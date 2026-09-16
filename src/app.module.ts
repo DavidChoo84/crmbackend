@@ -10,6 +10,9 @@ import { ProductsModule } from './products/products.module';
 import { PackagesModule } from './packages/packages.module';
 import { OrdersModule } from './order/order.module';
 import { CustomerModule } from './customer/customer.module';
+import { ProjectMemberModule } from './project-members/project-member.module';
+import { ProjectTargetModule } from './project-target/project-target.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -25,7 +28,7 @@ import { CustomerModule } from './customer/customer.module';
       password: process.env.DB_PASS || 'nestpassword',
       database: process.env.DB_NAME || 'nestjs_db',
       autoLoadEntities: true, // Automatically loads all entities in imported modules
-      synchronize: true,      // ⚠️ Enable only in development
+      synchronize: false,      // ⚠️ Enable only in development
     }),
 
     // 🟩 Register feature modules
@@ -35,7 +38,10 @@ import { CustomerModule } from './customer/customer.module';
     ProductsModule,
     PackagesModule,
     OrdersModule,
-    CustomerModule
+    CustomerModule,
+    ProjectMemberModule,
+    ProjectTargetModule,
+    ReportsModule
   ],
 })
 export class AppModule {}

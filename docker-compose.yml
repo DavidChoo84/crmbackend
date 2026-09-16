@@ -37,11 +37,11 @@ services:
       DB_NAME: nestjs_db
       JWT_SECRET: supersecret_jwt_key
       JWT_EXPIRATION: 3600s
-      MAIL_HOST: mailhog
-      MAIL_PORT: 1025
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: 587
       MAIL_SECURE: "false"
-      MAIL_USER: ""
-      MAIL_PASSWORD: ""
+      MAIL_USER: "zhelimchoo3574@gmail.com"
+      MAIL_PASSWORD: "uhuxkkfclkjnjzym"
       MAIL_FROM: "CRM App <no-reply@yourcrm.com>"
       FRONTEND_URL: "http://localhost:3001"
     ports:

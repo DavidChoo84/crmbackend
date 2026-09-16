@@ -21,6 +21,14 @@ export class CreateOrderProductDto {
 
 // 2. FIXED: Package must now contain the Products array
 export class CreateOrderPackageDto {
+  // 🔑 FIX: was missing here — with ValidationPipe({ whitelist: true }) in
+  // main.ts, any field not declared on this DTO gets silently stripped
+  // before it reaches the service, even though the frontend sends it and
+  // the entity has a matching column.
+  @IsString()
+  @IsOptional()
+  packageId?: string;
+
   @IsString()
   @IsNotEmpty()
   packageName: string;

@@ -17,10 +17,12 @@ export enum OrderType {
 }
 
 export enum PaymentType {
-  COD = 'COD',
-  TNG = 'TNG', // Touch 'n Go
   TRANSFER = 'Transfer',
-  CARD = 'Card'
+  TNG = 'TNG',
+  CREDIT_CARD = 'Credit Card',
+  CASH = 'Cash',
+  COD = 'COD',
+  SPAYLATER = 'SPayLater',
 }
 
 export enum PaymentStatus {

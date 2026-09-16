@@ -7,6 +7,9 @@ export class OrderPackage {
   @PrimaryColumn()
   orderPackageId: string; // OPKG_001
 
+  @Column({ nullable: true })
+  packageId: string;
+
   @Column()
   packageName: string;
 
