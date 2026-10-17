@@ -7,11 +7,15 @@ import {
   Patch, 
   Put, 
   Delete, 
+  Query,
+  Res,
   UseInterceptors, 
   UploadedFile 
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
+import { Response } from 'express';
+import { join } from 'path';
 import { OrdersService } from './order.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 
@@ -30,9 +34,11 @@ export class OrdersController {
     return { nextId };
   }
 
+  // 🔑 NEW: optional ?projectId= query param — filters orders down to
+  // those containing at least one package belonging to that project.
   @Get()
-  findAll() {
-    return this.ordersService.findAll();
+  findAll(@Query('projectId') projectId?: string) {
+    return this.ordersService.findAll(projectId);
   }
 
   @Get(':id')
@@ -69,5 +75,14 @@ export class OrdersController {
   }))
   uploadReceipt(@UploadedFile() file: Express.Multer.File) {
     return { filePath: `uploads/${file.filename}` };
+  }
+
+  // 🔑 NEW: forces a real "Save As" download (sets Content-Disposition:
+  // attachment) rather than relying on the browser to open the file inline,
+  // which is unreliable for cross-origin URLs (frontend :3001, backend :3000).
+  @Get('receipt/:filename')
+  downloadReceipt(@Param('filename') filename: string, @Res() res: Response) {
+    const filePath = join(process.cwd(), 'uploads', filename);
+    return res.download(filePath);
   }
 }

@@ -13,6 +13,12 @@ export class PackageProduct {
   @Column({ type: 'boolean', default: false })
   isFreeItem: boolean; // true = Free Gift, false = Main Product
 
+  // 🔑 NEW: distinguishes an add-on item from a main product. Both
+  // isFreeItem and isAddOn items are excluded from the package's average
+  // cost calculation — only genuine main-product cost counts toward it.
+  @Column({ type: 'boolean', default: false })
+  isAddOn: boolean;
+
   // --- Relations ---
 
   @ManyToOne(() => Package, (pkg) => pkg.packageProducts, { 

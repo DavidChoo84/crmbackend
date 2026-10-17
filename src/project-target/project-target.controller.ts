@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Param, Body, UseGuards } from '@nestjs/common';
 import { ProjectTargetService } from './project-target.service';
 import { UpsertProjectTargetDto } from './dto/upsert-project-target.dto';
+import { UpsertDailyMetricsDto } from './dto/upsert-daily-metrics.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'; // ⚠️ adjust path if different
 
 // Open to any authenticated role (master + cs_pc), matching the "Project
@@ -14,6 +15,24 @@ export class ProjectTargetController {
   @Get(':projectId')
   findByProject(@Param('projectId') projectId: string) {
     return this.service.findByProject(projectId);
+  }
+
+  // GET /project-targets/:projectId/:year/:month/daily — that month's daily
+  // leads + ad spend entries
+  @Get(':projectId/:year/:month/daily')
+  findDaily(
+    @Param('projectId') projectId: string,
+    @Param('year') year: string,
+    @Param('month') month: string,
+  ) {
+    return this.service.findDailyMetrics(projectId, Number(year), Number(month));
+  }
+
+  // POST /project-targets/daily — save daily leads + ad spend
+  // body: { projectId, days: [{ date: 'YYYY-MM-DD', leads, adSpend }] }
+  @Post('daily')
+  upsertDaily(@Body() dto: UpsertDailyMetricsDto) {
+    return this.service.upsertDailyMetrics(dto);
   }
 
   // GET /project-targets/:projectId/:year/:month — one specific month

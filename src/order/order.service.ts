@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, In } from 'typeorm';
+import { Repository, DataSource, EntityManager, In } from 'typeorm';
 import { Order, OrderType } from './order.entity';
 import { OrderPackage } from './order-package.entity';
 import { OrderProduct } from './order-product.entity';
@@ -22,6 +22,73 @@ export class OrdersService {
 
     private dataSource: DataSource, 
   ) {}
+
+  /**
+   * 🔑 NEW: Deducts `quantityNeeded` units of a product, transparently
+   * handling sub-products. If the product has a parentProductId and its
+   * own stock can't cover the request, it "opens" enough units from the
+   * parent (deducting from the parent, adding unitsPerParent × boxes to
+   * the sub-product) before fulfilling the sale from the sub-product.
+   *
+   * Regular products (no parentProductId) behave exactly as before.
+   */
+  private async deductProductStock(
+    manager: EntityManager,
+    productId: string,
+    quantityNeeded: number,
+  ): Promise<void> {
+    const product = await manager.findOne(Product, {
+      where: { productId },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Product ${productId} not found`);
+    }
+
+    // Regular product — deduct normally, same as before
+    if (!product.parentProductId) {
+      if (product.quantity < quantityNeeded) {
+        throw new BadRequestException(
+          `Insufficient stock for product: ${product.productName}. Available: ${product.quantity}, Requested: ${quantityNeeded}`,
+        );
+      }
+      product.quantity -= quantityNeeded;
+      await manager.save(Product, product);
+      return;
+    }
+
+    // Sub-product — top up from parent if current stock can't cover this request.
+    // The conversion ratio always mirrors the parent's own quantityPerBox —
+    // there's no separate ratio stored on the sub-product itself.
+    if (product.quantity < quantityNeeded) {
+      const parent = await manager.findOne(Product, {
+        where: { productId: product.parentProductId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!parent) {
+        throw new NotFoundException(`Parent product ${product.parentProductId} not found`);
+      }
+
+      const shortfall = quantityNeeded - product.quantity;
+      const unitsPerParent = parent.quantityPerBox || 1;
+      const boxesNeeded = Math.ceil(shortfall / unitsPerParent);
+
+      if (parent.quantity < boxesNeeded) {
+        throw new BadRequestException(
+          `Insufficient stock to open more "${product.productName}". Parent product "${parent.productName}" available: ${parent.quantity}, needed: ${boxesNeeded}`,
+        );
+      }
+
+      parent.quantity -= boxesNeeded;
+      product.quantity += boxesNeeded * unitsPerParent;
+      await manager.save(Product, parent);
+    }
+
+    product.quantity -= quantityNeeded;
+    await manager.save(Product, product);
+  }
 
   /**
    * CREATE ORDER
@@ -89,23 +156,11 @@ export class OrdersService {
         for (const pkg of orderData.orderPackages) {
           if (pkg.orderProducts) {
             for (const orderItem of pkg.orderProducts) {
-              const product = await queryRunner.manager.findOne(Product, {
-                where: { productId: orderItem.productId },
-                lock: { mode: 'pessimistic_write' }
-              });
-
-              if (!product) {
-                throw new NotFoundException(`Product ${orderItem.productId} not found`);
-              }
-
-              if (product.quantity < orderItem.quantity) {
-                throw new BadRequestException(
-                  `Insufficient stock for product: ${product.productName}. Available: ${product.quantity}, Requested: ${orderItem.quantity}`
-                );
-              }
-
-              product.quantity -= Number(orderItem.quantity);
-              await queryRunner.manager.save(Product, product);
+              await this.deductProductStock(
+                queryRunner.manager,
+                orderItem.productId,
+                Number(orderItem.quantity),
+              );
             }
           }
         }
@@ -163,6 +218,11 @@ export class OrdersService {
         const isGoingToCancelled = updateOrderDto.status === 'Cancelled';
 
         // --- STEP A: RESTORE STOCK (Only if it wasn't already cancelled) ---
+        // Note: restoration always credits back to the exact product that
+        // was originally deducted (the sub-product itself, if applicable).
+        // It intentionally does NOT try to reverse a parent "box-opening" —
+        // once a box is physically opened, cancelling the order shouldn't
+        // pretend it got sealed back up.
         if (order.orderPackages && !wasCancelled) {
           for (const oldPkg of order.orderPackages) {
             const pkgMultiplier = Number(oldPkg.quantity || 1); 
@@ -206,20 +266,8 @@ export class OrdersService {
           for (const newPkg of processedPackages) {
             const pkgMultiplier = Number(newPkg.quantity || 1);
             for (const newItem of newPkg.orderProducts || []) {
-              const product = await queryRunner.manager.findOne(Product, {
-                where: { productId: newItem.productId },
-                lock: { mode: 'pessimistic_write' }
-              });
-
-              if (!product) throw new NotFoundException(`Product ${newItem.productId} not found`);
-
               const totalToDeduct = Number(newItem.quantity) * pkgMultiplier;
-              if (product.quantity < totalToDeduct) {
-                throw new BadRequestException(`Insufficient stock for ${product.productName}`);
-              }
-
-              product.quantity -= totalToDeduct;
-              await queryRunner.manager.save(Product, product);
+              await this.deductProductStock(queryRunner.manager, newItem.productId, totalToDeduct);
             }
           }
         }
@@ -262,6 +310,8 @@ export class OrdersService {
     await this.dataSource.transaction(async (transactionalEntityManager) => {
       
       // Moving to Cancelled -> Return quantities to active stock
+      // (same note as STEP A above: restores to the exact product deducted,
+      // does not attempt to reverse a parent box-opening)
       if (oldStatus !== 'Cancelled' && newStatus === 'Cancelled') {
         if (order.orderPackages) {
           for (const pkg of order.orderPackages) {
@@ -283,18 +333,8 @@ export class OrdersService {
           for (const pkg of order.orderPackages) {
             const pkgMultiplier = Number(pkg.quantity || 1);
             for (const item of pkg.orderProducts || []) {
-              const product = await transactionalEntityManager.findOne(Product, {
-                where: { productId: item.productId },
-                lock: { mode: 'pessimistic_write' }
-              });
-              if (!product) throw new NotFoundException(`Product ${item.productId} not found`);
-              
               const totalToDeduct = Number(item.quantity) * pkgMultiplier;
-              if (product.quantity < totalToDeduct) {
-                throw new BadRequestException(`Insufficient stock for ${product.productName} to revive order.`);
-              }
-              product.quantity -= totalToDeduct;
-              await transactionalEntityManager.save(Product, product);
+              await this.deductProductStock(transactionalEntityManager, item.productId, totalToDeduct);
             }
           }
         }
@@ -307,7 +347,29 @@ export class OrdersService {
     return this.findOne(id);
   }
 
-  async findAll() {
+  // 🔑 NEW: optional projectId filter. Orders have no direct project link —
+  // it's derived via order_package.packageId -> package.projectId, same
+  // join used in reports.service.ts. Raw SQL avoids depending on relation
+  // property names that may not be defined on OrderPackage.
+  async findAll(projectId?: string) {
+    if (projectId) {
+      const rows = await this.dataSource.query(
+        `SELECT DISTINCT op.orderId
+         FROM order_package op
+         INNER JOIN package pkg ON pkg.packageId = op.packageId
+         WHERE pkg.projectId = ?`,
+        [projectId],
+      );
+      const orderIds = rows.map((r: any) => r.orderId);
+      if (orderIds.length === 0) return [];
+
+      return this.ordersRepository.find({
+        where: { orderId: In(orderIds) },
+        relations: ['customer', 'orderPackages', 'orderPackages.orderProducts'],
+        order: { createdAt: 'DESC' },
+      });
+    }
+
     return await this.ordersRepository.find({
       relations: ['customer', 'orderPackages', 'orderPackages.orderProducts'],
       order: { createdAt: 'DESC' },

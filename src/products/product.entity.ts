@@ -40,6 +40,18 @@ export class Product {
   @Column({ type: 'int' })
   quantityPerBox: number;
 
+  // 🔑 Sub-product support. A product is a "sub-product" when
+  // parentProductId is set — e.g. "Vitamin A (Plate)" with
+  // parentProductId pointing to "Vitamin A". The conversion ratio is read
+  // directly from the parent's own quantityPerBox at deduction time —
+  // no separate ratio field needed, since it always mirrors the parent.
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  parentProductId: string | null;
+
+  @ManyToOne(() => Product, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'parentProductId' })
+  parentProduct: Product;
+
   // FIX: Removed the @Column decorator here.
   // The @ManyToOne relationship below already creates the 'projectId' column in the DB.
   // We keep the property 'projectId' so you can access the ID directly if needed.

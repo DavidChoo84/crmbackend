@@ -123,6 +123,41 @@ export class CustomerService {
     });
   }
 
+  // Rows for the Excel export. With year+month: only customers who placed a
+  // non-cancelled order in that month, plus that month's order count and
+  // spending. Without: every customer (no 50-row cap like findAll).
+  async exportData(year?: number, month?: number) {
+    if (year && month && month >= 1 && month <= 12) {
+      const start = new Date(Date.UTC(year, month - 1, 1)).toISOString().slice(0, 10);
+      const end = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+      const rows = await this.customerRepo.query(
+        `SELECT c.*, m.monthOrders, m.monthSpent
+         FROM customer c
+         INNER JOIN (
+           SELECT customerId, COUNT(*) AS monthOrders, COALESCE(SUM(totalAmount), 0) AS monthSpent
+           FROM \`order\`
+           WHERE status != 'Cancelled' AND deletedAt IS NULL
+             AND orderDate >= ? AND orderDate < ?
+           GROUP BY customerId
+         ) m ON m.customerId = c.customerId
+         ORDER BY CAST(SUBSTRING(c.customerId, 2) AS UNSIGNED)`,
+        [start, end],
+      );
+      return rows.map((r: any) => ({
+        ...r,
+        totalOrder: Number(r.totalOrder) || 0,
+        totalSpent: Number(r.totalSpent) || 0,
+        monthOrders: Number(r.monthOrders) || 0,
+        monthSpent: Number(r.monthSpent) || 0,
+      }));
+    }
+
+    return this.customerRepo
+      .createQueryBuilder('customer')
+      .orderBy('CAST(SUBSTRING(customer.customerId, 2) AS UNSIGNED)', 'ASC')
+      .getMany();
+  }
+
   async findOne(id: string): Promise<Customer> {
     const customer = await this.customerRepo.findOneBy({ customerId: id });
     if (!customer) throw new NotFoundException(`Customer with ID ${id} not found`);

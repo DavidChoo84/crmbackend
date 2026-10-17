@@ -18,6 +18,7 @@ export interface PackageInput {
     productId: string; 
     quantity: number; 
     isFreeItem: boolean; 
+    isAddOn?: boolean; // 🔑 NEW
   }[];
 }
 
@@ -97,6 +98,7 @@ export class PackagesService {
             product: { productId: item.productId } as any, 
             quantity: item.quantity,
             isFreeItem: item.isFreeItem,
+            isAddOn: item.isAddOn || false, // 🔑 NEW
             // Link to the package that is already saved
             package: newPackage 
           })
@@ -138,6 +140,7 @@ export class PackagesService {
             product: { productId: item.productId } as any, 
             quantity: item.quantity,
             isFreeItem: item.isFreeItem,
+            isAddOn: item.isAddOn || false, // 🔑 NEW
             package: existingPackage,
           });
         });

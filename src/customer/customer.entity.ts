@@ -31,6 +31,21 @@ export class Customer {
   })
   totalSpent: number;
 
+  // LPV (lifetime spending) and AOV (totalSpent / totalOrder) are MySQL
+  // generated columns (sql/2026-10-17_customer_lpv_aov.sql) — read-only here,
+  // the database keeps them up to date.
+  @Column({
+    type: 'decimal', precision: 10, scale: 2, insert: false, update: false,
+    transformer: { to: (value: number) => value, from: (value: string) => parseFloat(value) || 0 },
+  })
+  lpv: number;
+
+  @Column({
+    type: 'decimal', precision: 10, scale: 2, insert: false, update: false,
+    transformer: { to: (value: number) => value, from: (value: string) => parseFloat(value) || 0 },
+  })
+  aov: number;
+
   @Column({ length: 255, default: 'Standard' })
   privilege: string; // Defaults to Standard/Premium based on loyalty
 

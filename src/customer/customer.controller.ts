@@ -28,6 +28,13 @@ export class CustomerController {
     return { nextId }; // Returning an object is best practice for JSON APIs
   }
   
+  // GET /customers/export?year=2026&month=10 — customers who ordered that
+  // month (with month totals); omit year/month for all customers
+  @Get('export')
+  async exportData(@Query('year') year?: string, @Query('month') month?: string) {
+    return this.customerService.exportData(Number(year), Number(month));
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.customerService.findOne(id);
