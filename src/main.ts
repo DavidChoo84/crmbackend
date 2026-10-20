@@ -27,19 +27,30 @@ async function bootstrap() {
   });
 
   // ✅ Application CORS handling
+  // Local dev origins + any deployed frontend URL(s) from env.
+  // FRONTEND_URL can be a comma-separated list, e.g.
+  //   https://crm-client.vercel.app,https://crm-preview.vercel.app
+  const allowedOrigins = [
+    'http://localhost:3001',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    ...(process.env.FRONTEND_URL || '')
+      .split(',')
+      .map((o) => o.trim().replace(/\/+$/, ''))
+      .filter(Boolean),
+  ];
+
   app.enableCors({
-    origin: [
-      'http://localhost:3001', 
-      'http://localhost:5173', 
-      'http://localhost:8080', 
-    ],
+    origin: allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
 
   // ✅ Start backend service
-  await app.listen(3000);
-  console.log('🚀 App running on http://localhost:3000');
+  // Hosting platforms (Render, Railway, Koyeb…) inject PORT; default 3000 locally.
+  const port = Number(process.env.PORT) || 3000;
+  await app.listen(port, '0.0.0.0');
+  console.log(`🚀 App running on port ${port}`);
 }
 
 bootstrap();

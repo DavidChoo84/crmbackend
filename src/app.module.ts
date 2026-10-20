@@ -29,6 +29,8 @@ import { ReportsModule } from './reports/reports.module';
       database: process.env.DB_NAME || 'nestjs_db',
       autoLoadEntities: true, // Automatically loads all entities in imported modules
       synchronize: false,      // ⚠️ Enable only in development
+      // Cloud MySQL (Aiven, TiDB Cloud, etc.) requires TLS. Set DB_SSL=true there.
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
     }),
 
     // 🟩 Register feature modules

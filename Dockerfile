@@ -1,26 +1,22 @@
-# Use Node 20 LTS
-FROM node:20
-
-# Set working directory
+# ---------- Build stage ----------
+FROM node:20-slim AS build
 WORKDIR /usr/src/app
-
-# Copy package files first for better caching
 COPY package*.json ./
-
-# Install dependencies
-RUN npm install
-
-# Rebuild bcrypt for Linux (important for Docker)
-RUN npm rebuild bcrypt --build-from-source
-
-# Copy the rest of the source code
+RUN npm ci
 COPY . .
-
-# Build the NestJS project
 RUN npm run build
 
-# Expose the NestJS port
-EXPOSE 3000
+# ---------- Runtime stage ----------
+FROM node:20-slim
+WORKDIR /usr/src/app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=build /usr/src/app/dist ./dist
+# Receipt uploads are written here (note: on free hosting this disk is
+# wiped on every redeploy/restart — fine for testing).
+RUN mkdir -p uploads
 
-# Run the production build
-CMD ["npm", "run", "start:prod"]
+# Hosting platforms set PORT; main.ts falls back to 3000.
+EXPOSE 3000
+CMD ["node", "dist/main.js"]

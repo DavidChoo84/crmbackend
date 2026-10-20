@@ -1,0 +1,41 @@
+# Render Blueprint — New > Blueprint > pick this repo (branch AP_CRM).
+# Secrets marked sync:false are entered in the Render dashboard, not committed.
+services:
+  - type: web
+    name: crm-backend
+    runtime: docker
+    plan: free
+    branch: AP_CRM
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASS
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION
+        value: 3600s
+      - key: MAIL_HOST
+        value: smtp.gmail.com
+      - key: MAIL_PORT
+        value: "587"
+      - key: MAIL_SECURE
+        value: "false"
+      - key: MAIL_USER
+        sync: false
+      - key: MAIL_PASSWORD
+        sync: false
+      - key: MAIL_FROM
+        value: CRM App <no-reply@yourcrm.com>
+      - key: FRONTEND_URL
+        sync: false

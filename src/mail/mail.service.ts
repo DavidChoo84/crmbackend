@@ -20,9 +20,13 @@ export class MailService {
   }
 
   async sendPasswordResetEmail(email: string, token: string): Promise<void> {
-    const resetUrl = `${this.configService.get<string>(
-      'FRONTEND_URL',
-    )}/reset-password?token=${token}`;
+    // FRONTEND_URL may be a comma-separated list (also used for CORS);
+    // the first entry is the main site used in email links.
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001')
+      .split(',')[0]
+      .trim()
+      .replace(/\/+$/, '');
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 
     try {
       await this.transporter.sendMail({

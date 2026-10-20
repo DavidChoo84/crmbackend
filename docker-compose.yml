@@ -1,15 +1,18 @@
 version: '3.8'
 
+# Local development stack. Secrets now live in a .env file next to this file
+# (copy .env.example -> .env and fill in). .env is git-ignored.
+
 services:
   mysql:
     image: mysql:8.0
     container_name: mysql_db
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: nestjs_db
-      MYSQL_USER: nestuser
-      MYSQL_PASSWORD: nestpassword
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-nestjs_db}
+      MYSQL_USER: ${DB_USER:-nestuser}
+      MYSQL_PASSWORD: ${DB_PASS:-nestpassword}
     ports:
       - "3306:3306"
     volumes:
@@ -21,7 +24,9 @@ services:
       retries: 5
 
   nestjs:
-    build: .
+    build:
+      context: .
+      target: build   # dev stage: full deps + source, so start:dev works
     container_name: nestjs_api
     restart: always
     depends_on:
@@ -29,21 +34,11 @@ services:
         condition: service_healthy
       mailhog:
         condition: service_started
+    env_file:
+      - .env
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_USER: nestuser
-      DB_PASS: nestpassword
-      DB_NAME: nestjs_db
-      JWT_SECRET: supersecret_jwt_key
-      JWT_EXPIRATION: 3600s
-      MAIL_HOST: smtp.gmail.com
-      MAIL_PORT: 587
-      MAIL_SECURE: "false"
-      MAIL_USER: "zhelimchoo3574@gmail.com"
-      MAIL_PASSWORD: "uhuxkkfclkjnjzym"
-      MAIL_FROM: "CRM App <no-reply@yourcrm.com>"
-      FRONTEND_URL: "http://localhost:3001"
     ports:
       - "3000:3000"
     command: npm run start:dev
